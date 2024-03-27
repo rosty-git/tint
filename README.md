@@ -18,6 +18,9 @@ which is a drop-in replacement for [`slog.HandlerOptions`](https://pkg.go.dev/lo
 
 ```
 go get github.com/lmittmann/tint
+
+// go.mod
+replace github.com/lmittmann/tint v1.0.4 => github.com/rosty-git/tint v0.0.1
 ```
 
 ## Usage
