@@ -1,3 +1,5 @@
+# This is a fork of [github.com/lmittmann/tint](github.com/lmittmann/tint)
+
 # `tint`: 🌈 **slog.Handler** that writes tinted logs
 
 <picture>
@@ -15,7 +17,7 @@ that writes tinted (colorized) logs. Its output format is inspired by the `zerol
 which is a drop-in replacement for [`slog.HandlerOptions`](https://pkg.go.dev/log/slog#HandlerOptions).
 
 ```
-go get github.com/rosty-git/tint
+go get github.com/lmittmann/tint
 ```
 
 ## Usage
