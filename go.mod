@@ -1,3 +1,3 @@
-module github.com/lmittmann/tint
+module github.com/rosty-git/tint
 
 go 1.21

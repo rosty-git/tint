@@ -61,6 +61,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unicode"
@@ -68,13 +69,47 @@ import (
 
 // ANSI modes
 const (
-	ansiReset          = "\033[0m"
-	ansiFaint          = "\033[2m"
-	ansiResetFaint     = "\033[22m"
-	ansiBrightRed      = "\033[91m"
-	ansiBrightGreen    = "\033[92m"
-	ansiBrightYellow   = "\033[93m"
-	ansiBrightRedFaint = "\033[91;2m"
+	AnsiReset      = "\033[0m"
+	AnsiFaint      = "\033[2m"
+	AnsiResetFaint = "\033[22m"
+
+	AnsiUnderline  = "\033[4m"
+	AnsiReverse    = "\033[7m"
+	AnsiBlink      = "\033[5m"
+	AnsiRapidBlink = "\033[6m" // Rapid blink on
+	AnsiBold       = "\033[1m" // Bold on
+	AnsiItalic     = "\033[3m" // Italic on
+	AnsiConceal    = "\033[8m" // Conceal on
+	AnsiCrossed    = "\033[9m" // Crossed-out on
+
+	AnsiBrightRed      = "\033[91m"
+	AnsiBrightGreen    = "\033[92m"
+	AnsiBrightYellow   = "\033[93m"
+	AnsiBrightWhite    = "\033[97m"
+	AnsiBrightRedFaint = "\033[91;2m"
+	AnsiBlack          = "\033[30m" // Set text color to black
+	AnsiRed            = "\033[31m" // Set text color to red
+	AnsiGreen          = "\033[32m" // Set text color to green
+	AnsiYellow         = "\033[33m" // Set text color to yellow
+	AnsiBlue           = "\033[34m" // Set text color to blue
+	AnsiMagenta        = "\033[35m" // Set text color to magenta
+	AnsiCyan           = "\033[36m" // Set text color to cyan
+	AnsiWhite          = "\033[37m" // Set text color to white
+	AnsiColorReset     = "\033[39m" // Reset text color to default
+
+	AnsiBackgroundBlack        = "\033[40m"  // Set background color to black
+	AnsiBackgroundBrightBlack  = "\033[100m" // Set background color to black
+	AnsiBackgroundRed          = "\033[41m"  // Set background color to red
+	AnsiBackgroundBrightRed    = "\033[101m" // Set background color to red
+	AnsiBackgroundGreen        = "\033[42m"  // Set background color to green
+	AnsiBackgroundBrightGreen  = "\033[102m" // Set background color to green
+	AnsiBackgroundYellow       = "\033[43m"  // Set background color to yellow
+	AnsiBackgroundBrightYellow = "\033[103m" // Set background color to yellow
+	AnsiBackgroundBlue         = "\033[44m"  // Set background color to blue
+	AnsiBackgroundMagenta      = "\033[45m"  // Set background color to magenta
+	AnsiBackgroundCyan         = "\033[46m"  // Set background color to cyan
+	AnsiBackgroundWhite        = "\033[47m"  // Set background color to white
+	AnsiBackgroundReset        = "\033[49m"  // Reset background color to default
 )
 
 const errKey = "err"
@@ -104,6 +139,28 @@ type Options struct {
 
 	// Disable color (Default: false)
 	NoColor bool
+
+	CustomStyles *CustomStyles
+}
+
+type CustomStyles struct {
+	Time    []string
+	Level   *LevelCustomStyles
+	Source  []string
+	Message *MessageCustomStyles
+}
+
+type LevelCustomStyles struct {
+	Info    []string
+	Error   []string
+	Debug   []string
+	Warning []string
+}
+
+type MessageCustomStyles struct {
+	Main  []string
+	Key   []string
+	Value []string
 }
 
 // NewHandler creates a [slog.Handler] that writes tinted logs to Writer w,
@@ -127,6 +184,21 @@ func NewHandler(w io.Writer, opts *Options) slog.Handler {
 		h.timeFormat = opts.TimeFormat
 	}
 	h.noColor = opts.NoColor
+	if opts.CustomStyles != nil {
+		h.customStyles.time = opts.CustomStyles.Time
+		if opts.CustomStyles.Level != nil {
+			h.customStyles.levels.info = opts.CustomStyles.Level.Info
+			h.customStyles.levels.error = opts.CustomStyles.Level.Error
+			h.customStyles.levels.debug = opts.CustomStyles.Level.Debug
+			h.customStyles.levels.warning = opts.CustomStyles.Level.Warning
+		}
+		h.customStyles.source = opts.CustomStyles.Source
+		if opts.CustomStyles.Message != nil {
+			h.customStyles.message.main = opts.CustomStyles.Message.Main
+			h.customStyles.message.key = opts.CustomStyles.Message.Key
+			h.customStyles.message.value = opts.CustomStyles.Message.Value
+		}
+	}
 	return h
 }
 
@@ -144,6 +216,28 @@ type handler struct {
 	replaceAttr func([]string, slog.Attr) slog.Attr
 	timeFormat  string
 	noColor     bool
+
+	customStyles customStyles
+}
+
+type customStyles struct {
+	time    []string
+	levels  levelCustomStyles
+	source  []string
+	message messageCustomStyles
+}
+
+type levelCustomStyles struct {
+	info    []string
+	error   []string
+	warning []string
+	debug   []string
+}
+
+type messageCustomStyles struct {
+	main  []string
+	key   []string
+	value []string
 }
 
 func (h *handler) clone() *handler {
@@ -219,7 +313,11 @@ func (h *handler) Handle(_ context.Context, r slog.Record) error {
 
 	// write message
 	if rep == nil {
+		if len(h.customStyles.message.main) > 0 {
+			buf.WriteStringIf(!h.noColor, sliceToString(h.customStyles.message.main))
+		}
 		buf.WriteString(r.Message)
+		buf.WriteStringIf(!h.noColor, AnsiReset)
 		buf.WriteByte(' ')
 	} else if a := rep(nil /* groups */, slog.String(slog.MessageKey, r.Message)); a.Key != "" {
 		h.appendValue(buf, a.Value, false)
@@ -277,32 +375,56 @@ func (h *handler) WithGroup(name string) slog.Handler {
 }
 
 func (h *handler) appendTime(buf *buffer, t time.Time) {
-	buf.WriteStringIf(!h.noColor, ansiFaint)
+	if len(h.customStyles.time) > 0 {
+		buf.WriteStringIf(!h.noColor, sliceToString(h.customStyles.time))
+	} else {
+		buf.WriteStringIf(!h.noColor, AnsiFaint)
+	}
 	*buf = t.AppendFormat(*buf, h.timeFormat)
-	buf.WriteStringIf(!h.noColor, ansiReset)
+	buf.WriteStringIf(!h.noColor, AnsiReset)
 }
 
 func (h *handler) appendLevel(buf *buffer, level slog.Level) {
 	switch {
 	case level < slog.LevelInfo:
+		if len(h.customStyles.levels.debug) > 0 {
+			buf.WriteStringIf(!h.noColor, sliceToString(h.customStyles.levels.debug))
+		}
 		buf.WriteString("DBG")
 		appendLevelDelta(buf, level-slog.LevelDebug)
+		buf.WriteStringIf(!h.noColor, AnsiReset)
 	case level < slog.LevelWarn:
-		buf.WriteStringIf(!h.noColor, ansiBrightGreen)
+		if len(h.customStyles.levels.info) > 0 {
+			buf.WriteStringIf(!h.noColor, sliceToString(h.customStyles.levels.info))
+		} else {
+			buf.WriteStringIf(!h.noColor, AnsiBrightGreen)
+		}
 		buf.WriteString("INF")
 		appendLevelDelta(buf, level-slog.LevelInfo)
-		buf.WriteStringIf(!h.noColor, ansiReset)
+		buf.WriteStringIf(!h.noColor, AnsiReset)
 	case level < slog.LevelError:
-		buf.WriteStringIf(!h.noColor, ansiBrightYellow)
+		if len(h.customStyles.levels.warning) > 0 {
+			buf.WriteStringIf(!h.noColor, sliceToString(h.customStyles.levels.warning))
+		} else {
+			buf.WriteStringIf(!h.noColor, AnsiBrightYellow)
+		}
 		buf.WriteString("WRN")
 		appendLevelDelta(buf, level-slog.LevelWarn)
-		buf.WriteStringIf(!h.noColor, ansiReset)
+		buf.WriteStringIf(!h.noColor, AnsiReset)
 	default:
-		buf.WriteStringIf(!h.noColor, ansiBrightRed)
+		if len(h.customStyles.levels.error) > 0 {
+			buf.WriteStringIf(!h.noColor, sliceToString(h.customStyles.levels.error))
+		} else {
+			buf.WriteStringIf(!h.noColor, AnsiBrightRed)
+		}
 		buf.WriteString("ERR")
 		appendLevelDelta(buf, level-slog.LevelError)
-		buf.WriteStringIf(!h.noColor, ansiReset)
+		buf.WriteStringIf(!h.noColor, AnsiReset)
 	}
+}
+
+func sliceToString(slice []string) string {
+	return strings.Join(slice, "")
 }
 
 func appendLevelDelta(buf *buffer, delta slog.Level) {
@@ -317,11 +439,15 @@ func appendLevelDelta(buf *buffer, delta slog.Level) {
 func (h *handler) appendSource(buf *buffer, src *slog.Source) {
 	dir, file := filepath.Split(src.File)
 
-	buf.WriteStringIf(!h.noColor, ansiFaint)
+	if len(h.customStyles.source) > 0 {
+		buf.WriteStringIf(!h.noColor, sliceToString(h.customStyles.source))
+	} else {
+		buf.WriteStringIf(!h.noColor, AnsiFaint)
+	}
 	buf.WriteString(filepath.Join(filepath.Base(dir), file))
 	buf.WriteByte(':')
 	buf.WriteString(strconv.Itoa(src.Line))
-	buf.WriteStringIf(!h.noColor, ansiReset)
+	buf.WriteStringIf(!h.noColor, AnsiReset)
 }
 
 func (h *handler) appendAttr(buf *buffer, attr slog.Attr, groupsPrefix string, groups []string) {
@@ -355,13 +481,21 @@ func (h *handler) appendAttr(buf *buffer, attr slog.Attr, groupsPrefix string, g
 }
 
 func (h *handler) appendKey(buf *buffer, key, groups string) {
-	buf.WriteStringIf(!h.noColor, ansiFaint)
+	if len(h.customStyles.message.key) > 0 {
+		buf.WriteStringIf(!h.noColor, sliceToString(h.customStyles.message.key))
+	} else {
+		buf.WriteStringIf(!h.noColor, AnsiFaint)
+	}
 	appendString(buf, groups+key, true)
 	buf.WriteByte('=')
-	buf.WriteStringIf(!h.noColor, ansiReset)
+	buf.WriteStringIf(!h.noColor, AnsiReset)
 }
 
 func (h *handler) appendValue(buf *buffer, v slog.Value, quote bool) {
+	if len(h.customStyles.message.value) > 0 {
+		buf.WriteStringIf(!h.noColor, sliceToString(h.customStyles.message.value))
+	}
+
 	switch v.Kind() {
 	case slog.KindString:
 		appendString(buf, v.String(), quote)
@@ -393,15 +527,17 @@ func (h *handler) appendValue(buf *buffer, v slog.Value, quote bool) {
 			appendString(buf, fmt.Sprintf("%+v", v.Any()), quote)
 		}
 	}
+
+	buf.WriteStringIf(!h.noColor, AnsiReset)
 }
 
 func (h *handler) appendTintError(buf *buffer, err error, groupsPrefix string) {
-	buf.WriteStringIf(!h.noColor, ansiBrightRedFaint)
+	buf.WriteStringIf(!h.noColor, AnsiBrightRedFaint)
 	appendString(buf, groupsPrefix+errKey, true)
 	buf.WriteByte('=')
-	buf.WriteStringIf(!h.noColor, ansiResetFaint)
+	buf.WriteStringIf(!h.noColor, AnsiResetFaint)
 	appendString(buf, err.Error(), true)
-	buf.WriteStringIf(!h.noColor, ansiReset)
+	buf.WriteStringIf(!h.noColor, AnsiReset)
 }
 
 func appendString(buf *buffer, s string, quote bool) {

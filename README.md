@@ -1,8 +1,5 @@
 # `tint`: 🌈 **slog.Handler** that writes tinted logs
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/lmittmann/tint.svg)](https://pkg.go.dev/github.com/lmittmann/tint#section-documentation)
-[![Go Report Card](https://goreportcard.com/badge/github.com/lmittmann/tint)](https://goreportcard.com/report/github.com/lmittmann/tint)
-
 <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://github.com/lmittmann/tint/assets/3458786/3d42f8d5-8bdf-40db-a16a-1939c88689cb">
     <source media="(prefers-color-scheme: light)" srcset="https://github.com/lmittmann/tint/assets/3458786/3d42f8d5-8bdf-40db-a16a-1939c88689cb">
@@ -15,11 +12,10 @@ Package `tint` implements a zero-dependency [`slog.Handler`](https://pkg.go.dev/
 that writes tinted (colorized) logs. Its output format is inspired by the `zerolog.ConsoleWriter` and
 [`slog.TextHandler`](https://pkg.go.dev/log/slog#TextHandler).
 
-The output format can be customized using [`Options`](https://pkg.go.dev/github.com/lmittmann/tint#Options)
 which is a drop-in replacement for [`slog.HandlerOptions`](https://pkg.go.dev/log/slog#HandlerOptions).
 
 ```
-go get github.com/lmittmann/tint
+go get github.com/rosty-git/tint
 ```
 
 ## Usage
@@ -85,4 +81,35 @@ w := os.Stderr
 logger := slog.New(
     tint.NewHandler(colorable.NewColorable(w), nil),
 )
+```
+
+### Customize Styles
+
+`CustomStyles` can be used to set your own styles for time, level and source.
+
+```go
+w := os.Stderr
+
+slog.SetDefault(slog.New(
+    tint.NewHandler(w, &tint.Options{
+        Level:     slog.LevelDebug,
+        NoColor:   !isatty.IsTerminal(w.Fd()),
+        AddSource: true,
+        CustomStyles: &tint.CustomStyles{
+            Time: []string{tint.AnsiBlack},
+            Level: &tint.LevelCustomStyles{
+                Info:    []string{tint.AnsiBackgroundGreen, tint.AnsiBrightWhite},
+                Error:   []string{tint.AnsiBackgroundBrightRed, tint.AnsiBrightWhite},
+                Debug:   []string{tint.AnsiItalic},
+                Warning: []string{tint.AnsiBrightYellow, tint.AnsiBold, tint.AnsiUnderline},
+			},
+            Source: []string{tint.AnsiItalic},
+            Message: &tint.MessageCustomStyles{
+                Main:  []string{tint.AnsiBlack, tint.AnsiBold},
+                Key:   []string{tint.AnsiBackgroundBrightGreen, tint.AnsiBrightWhite},
+                Value: []string{tint.AnsiBackgroundBrightYellow, tint.AnsiBrightWhite},
+            },
+        },
+    }),
+))
 ```
